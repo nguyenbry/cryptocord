@@ -24,7 +24,7 @@ func NewLoop(j *db.JobsService, c *crypto.Crypto, d *discord.Discord) *loop {
 }
 
 func (l *loop) Start(ctx context.Context) <-chan struct{} {
-	t := time.NewTicker(time.Second * 7)
+	t := time.NewTicker(time.Minute * 10)
 
 	go func() {
 		for {
@@ -49,7 +49,7 @@ func (l *loop) Start(ctx context.Context) <-chan struct{} {
 }
 
 func (l *loop) singleLoop(ctx context.Context) error {
-	_, cancel := context.WithTimeout(ctx, time.Minute*10)
+	_, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 
 	// get all the jobs

@@ -87,10 +87,10 @@ func main() {
 	srv := server.New(cfg.discord, cfg.jobsSvc)
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(1)
 
-	go func(w *sync.WaitGroup) {
-		defer w.Done()
+	go func() {
+		defer wg.Done()
 
 		<-mainCtx.Done()
 
@@ -102,17 +102,13 @@ func main() {
 		} else {
 			log.Println("graceful exit")
 		}
-	}(&wg)
+	}()
 
-	go func(w *sync.WaitGroup) {
-		defer w.Done()
-		<-loop.Start(mainCtx)
-
-		fmt.Println("yay I am done")
-	}(&wg)
+	// start the notification sending loop
+	loopChan := loop.Start(mainCtx)
 
 	srv.ApplyRoutes()
-	err = srv.Start(":4000") // blocking, will continue when server stops listening
+	err = srv.Start(":4000") // blocking
 
 	// just print out why the server stopped
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -121,7 +117,14 @@ func main() {
 		log.Println("graceful exit")
 	}
 
-	// when the server stops listening, tell the other goroutine about it
+	// server stopped blocking, cancel parent context to stop everything else
 	cancelMain()
+
+	// wait for other goroutine
 	wg.Wait()
+
+	// wait for loop to terminate
+	<-loopChan
+
+	fmt.Println("loop finished")
 }
