@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -19,6 +20,8 @@ var (
 	ErrInvalidKey = errors.New("invalid CoinMarketCap key")
 	ErrNotFound   = errors.New("requested token not found")
 )
+
+var _ error = &ErrExternalApi{}
 
 // Non success codes from CoinMarketCap API have this JSON structure
 type ErrExternalApi struct {
@@ -132,7 +135,11 @@ func (c *Crypto) Bitcoin(ctx context.Context) (*quote, error) {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	defer res.Body.Close()
+	defer func() {
+		// see https://www.reddit.com/r/golang/comments/13fphyz/til_go_response_body_must_be_closed_even_if_you/
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+	}()
 
 	if res.StatusCode != http.StatusOK {
 		e, err := c.decodeErr(res)

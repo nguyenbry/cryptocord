@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 )
@@ -62,21 +63,18 @@ func TestSuccessfulReq(t *testing.T) {
 	key, exists := os.LookupEnv("CMC_KEY")
 
 	if !exists {
-		t.Fatalf("key must be set in env")
+		t.Fatalf("CMC_KEY must be set in env")
 	}
 
 	c := New(key)
 
 	quote, err := c.Bitcoin(context.Background())
 
-	if err == ErrInvalidKey {
-		if quote.Price != 0 {
-			t.Fatalf("expected price to be 0")
-		}
-		t.Fatalf("key provided was rejected by CoinMarketCap")
-	}
-
 	if err != nil {
+		if errors.Is(err, ErrInvalidKey) {
+			t.Fatalf("key provided was rejected by CoinMarketCap")
+		}
+
 		if quote.Price != 0 {
 			t.Fatalf("expected price to be 0")
 		}
