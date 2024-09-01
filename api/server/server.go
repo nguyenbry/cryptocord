@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
 	"github.com/nguyenbry/crypto-reports/db"
 	"github.com/nguyenbry/crypto-reports/discord"
 )
@@ -30,7 +29,6 @@ func New(d *discord.Discord, j *db.JobsService) *server {
 }
 
 func (s *server) ApplyRoutes() {
-	s.router.Get("/", s.handleHealthCheck)
 	s.router.Post("/jobs", s.handleNewJob)
 }
 
@@ -91,21 +89,6 @@ func (s *server) handleNewJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write([]byte(id.String()))
-}
-
-func (s *server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	// test, get random str
-	testUrl := uuid.New().String()
-	id, err := s.jobsSvc.Create(r.Context(), testUrl)
-
-	// ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	// defer cancel()
-
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
 	w.Write([]byte(id.String()))
 }
 

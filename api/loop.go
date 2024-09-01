@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"sync"
@@ -17,35 +17,47 @@ type loop struct {
 	jobsSvc *db.JobsService
 	crypto  *crypto.Crypto
 	discord *discord.Discord
+
+	doneChan chan struct{}
 }
 
 func NewLoop(j *db.JobsService, c *crypto.Crypto, d *discord.Discord) *loop {
 	return &loop{jobsSvc: j, crypto: c, discord: d}
 }
 
-func (l *loop) Start(ctx context.Context) <-chan struct{} {
-	t := time.NewTicker(time.Minute * 10)
+func (l *loop) Start(ctx context.Context, d time.Duration) {
+	if l.doneChan != nil {
+		// already started
+		return
+	}
+
+	l.doneChan = make(chan struct{})
 
 	go func() {
+		defer func() {
+			// signal to caller we are done
+			l.doneChan <- struct{}{}
+		}()
+
+		t := time.NewTicker(d)
+
 		for {
 			select {
+			case <-ctx.Done():
+				// caller tells us to stop
+				return
 			case <-t.C:
-				fmt.Println("ayee")
 				err := l.singleLoop(ctx)
 
 				if err != nil {
-					fmt.Printf("loop failed: %v", err)
+					log.Printf("loop failed: %v", err)
 				} else {
-					fmt.Println("loop finished")
+					log.Println("loop finished")
 				}
-			case <-ctx.Done():
-				// stop looping
-				return
+
 			}
 		}
 	}()
-
-	return ctx.Done()
 }
 
 func (l *loop) singleLoop(ctx context.Context) error {
@@ -88,4 +100,12 @@ func (l *loop) singleLoop(ctx context.Context) error {
 	wg.Wait()
 
 	return nil
+}
+
+func (l *loop) Done() <-chan struct{} {
+	if l.doneChan == nil {
+		panic("can not call done on a nil")
+	}
+
+	return l.doneChan
 }

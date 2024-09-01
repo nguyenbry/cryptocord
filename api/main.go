@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -21,6 +20,7 @@ import (
 
 const DB_ENV_KEY = "DB_URI"
 const CMC_ENV_KEY = "CMC_KEY"
+const ENV_ENV_KEY = "ENV"
 
 type appConfig struct {
 	jobsSvc *db.JobsService
@@ -28,13 +28,12 @@ type appConfig struct {
 }
 
 func main() {
-	env, ok := os.LookupEnv("ENV")
+	env, ok := os.LookupEnv(ENV_ENV_KEY)
 
 	if !ok {
-		log.Fatal("ENV environment variable is required to start app")
+		log.Fatalf("%v environment variable is required to start app", ENV_ENV_KEY)
 	}
 
-	// load from .env if DEV env
 	if env == "DEV" {
 		err := godotenv.Load()
 		if err != nil {
@@ -47,7 +46,7 @@ func main() {
 	uri, ok := os.LookupEnv(DB_ENV_KEY)
 
 	if !ok {
-		log.Fatal("DB_URI missing from env")
+		log.Fatalf("%v missing from env", DB_ENV_KEY)
 	}
 
 	cmc, ok := os.LookupEnv(CMC_ENV_KEY)
@@ -56,25 +55,20 @@ func main() {
 		log.Fatalf("%v missing from env", CMC_ENV_KEY)
 	}
 
-	mainCtx, cancelMain := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer cancelMain()
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
 
-	myDb, err := db.New(mainCtx, uri)
+	myDb, err := db.New(ctx, uri)
 	if err != nil {
-		log.Fatalf("could not build DB: %v", err)
+		log.Fatalf("could not build db: %v", err)
 	}
-	err = myDb.Ping(mainCtx)
+	err = myDb.Ping(ctx)
 	if err != nil {
 		log.Fatalf("ping db failed: %v", err)
 	}
 
-	log.Println("db connected")
-
 	// no more fatals after this point because this needs to be called
-	defer func() {
-		myDb.Close()
-		fmt.Println("closing db")
-	}()
+	defer myDb.Close()
 
 	// build app config
 	cfg := &appConfig{
@@ -92,39 +86,30 @@ func main() {
 	go func() {
 		defer wg.Done()
 
-		<-mainCtx.Done()
+		<-ctx.Done()
 
 		// listen for kill signals and give the server some time to die
 		ctxWaitShutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctxWaitShutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("server shutdown failed: %v", err)
-		} else {
-			log.Println("graceful exit")
 		}
 	}()
 
-	// start the notification sending loop
-	loopChan := loop.Start(mainCtx)
+	loop.Start(ctx, time.Minute*10)
 
 	srv.ApplyRoutes()
 	err = srv.Start(":4000") // blocking
+	// cancel parent context to stop everything else
+	cancel()
 
-	// just print out why the server stopped
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("server failed due to some other reason: %v", err)
-	} else {
-		log.Println("graceful exit")
 	}
 
-	// server stopped blocking, cancel parent context to stop everything else
-	cancelMain()
-
-	// wait for other goroutine
 	wg.Wait()
 
 	// wait for loop to terminate
-	<-loopChan
+	<-loop.Done()
 
-	fmt.Println("loop finished")
 }
